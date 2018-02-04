@@ -1,0 +1,19 @@
+1. Run the main.py
+2. The following modules are needed: PyQt5, NumPy
+
+The GUI consists of the following parts:
+-Buttons
+-Options (radio buttons)
+-Fields
+-Canvas (this is where the points are located)
+
+The number of points can be given in the "Number of points" field. 
+Each point has a coordinate which is generated from the [X,Y] interval. 
+A point can be added to the list by selecting the "Generate" option and then clicking on the canvas.
+The similarity is based on the Euclidean distance of the objects or their RGB distance. The thresholds for the similarty and the difference can be given in the "Similarity" and "Difference" fields.
+
+Clicking on the "Run" button, the search algorithm is executed. Then some points can be selected for approximation by using the "Choose to be approximated" option and clicking on the selected point. 
+
+In the "File" menu the annotation proccess can be selected. After giving the singleton ID and the cluster ID, the software inserts the member of the selected singleton into the selected cluster.
+
+The approximations can be seen after clicking on the "Approximation" or the "Approximation with Annotations" button.
