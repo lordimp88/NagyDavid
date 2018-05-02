@@ -1,19 +1,24 @@
-from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor
-from PyQt5.QtWidgets import  QAction, QGraphicsTextItem, QDialog
+import sys
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtCore import Qt, QPointF, pyqtSlot
+from PyQt5.QtGui import QPen, QBrush, QColor
+from PyQt5.QtWidgets import QGraphicsScene, QGraphicsEllipseItem, QAction, QFileDialog, QGraphicsTextItem, QDialog, \
+    QMessageBox, QInputDialog
 import random
 import EntityPoint
 import numpy as np
+
 import groups as gr
 import UnionFindA
 from annotation import Annotation
 from approximation_dialog import Approximation
 from contractdict import ContractDict2
+import pandas as pd
 
 import main_window
 import scene
 import representant as rep
+import define_similarity
 
 
 
@@ -41,6 +46,7 @@ class MainMenu(QtWidgets.QMainWindow, main_window.Ui_MainWindow):
         self.clusters = []
         self.colors = []
         self.attributes = []
+        self.attribute_intervals = []
 
         self.set_to_be_approximated = set()
 
@@ -62,22 +68,130 @@ class MainMenu(QtWidgets.QMainWindow, main_window.Ui_MainWindow):
         self.lower_approximaton_clustering_annotation = []
         self.upper_approximaton_clustering_annotation = []
 
+        openFile = QAction('&Open File', self)
+        openFile.setShortcut('Ctrl+O')
+        openFile.setStatusTip('Open File')
+        openFile.triggered.connect(self.file_open)
+
 
         setAnnotation = QAction('&Set Annotation', self)
         setAnnotation.setShortcut('Ctrl+N')
         setAnnotation.setStatusTip('Set Annotation')
         setAnnotation.triggered.connect(self.set_annotation)
 
+        defineSimilarity = QAction('&Define Similarity', self)
+        defineSimilarity.setShortcut('Ctrl+M')
+        defineSimilarity.setStatusTip('Define Similarity')
+        defineSimilarity.triggered.connect(self.define_simmilarity_dialog)
 
         self.statusBar()
 
         mainMenu = self.menuBar()
         fileMenu = mainMenu.addMenu('&File')
+        fileMenu.addAction(openFile)
+
         fileMenu.addAction(setAnnotation)
+        fileMenu.addAction(defineSimilarity)
+
+        self.table = QtWidgets.QTableWidget(self.centralwidget)
+        self.table.setGeometry(QtCore.QRect(20, 360, 951, 251))
+        self.table.setObjectName("table")
 
         self.buttonGroup.buttonClicked.connect(lambda btn: self.points_canvas.scene.setOption(btn.text()))
 
-  # -------------------------------------------------------------------------------------------------------------------
+    # -------------------------------------------------------------------------------------------------------------------
+    def file_open(self):
+        name, _ = QFileDialog.getOpenFileName(self, 'Open File', options=QFileDialog.DontUseNativeDialog)
+        self.points_type = 1
+
+        x = int(self.x_range.toPlainText())
+        y = int(self.y_range.toPlainText())
+
+        df = pd.read_csv(name, header=0)
+        df = df.replace('NaN', np.NaN)
+
+        num, ok = QInputDialog.getInt(self, "Index of the decision attribute in the Information System",
+                                      "The index of the decision attribue:")
+        if ok:
+            dec_attr_index = num
+
+        dec_attr_list = df[df.columns[dec_attr_index]].tolist()
+
+        # csak az azokat az oszlopokat hagyja meg, amik nem az osztályozást adják meg
+        df.drop(df.columns[dec_attr_index], axis=1, inplace=True)
+
+        msg = "Would you like to normalize the data?"
+        reply = QMessageBox.question(self, 'Message', msg, QMessageBox.Yes, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            for i in range(len(df.columns)):
+                max = df[df.columns[i]].dropna().max()
+                min = df[df.columns[i]].dropna().min()
+                df[df.columns[i]] = df[df.columns[i]].apply(lambda x: (x - min) / (max - min))
+        else:
+            pass
+
+        # normalizálás után hozzáadjuk a decision_attribute oszlopot is a dataframe-hez és a fejlécekhez is
+        self.headers = list(df.columns.values)
+        self.headers.append("Class")
+        se = pd.Series(dec_attr_list)
+        df['Class'] = se.values
+
+        # csere az első és utolsó (decision attribute). Így a decision attribute mindig az első helyen fog állni
+        c = df.columns
+        last = len(c) - 1
+        df[[c[0], c[last]]] = df[[c[last], c[0]]]
+        self.headers[0], self.headers[last] = self.headers[last], self.headers[0]
+
+        # rendezzük osztályozó attribútum szerint, hogy később könnyebb legyen kiválasztani a közelítendő halmazok elemeit
+        df = df.sort_values(by=df.columns[0])
+        dec_attr_list = df[df.columns[dec_attr_index]].tolist()
+
+        self.border_points_of_decision_attribute_values = [0]
+        for i in range(len(dec_attr_list) - 1):
+            if dec_attr_list[i] != dec_attr_list[i + 1]:
+                self.border_points_of_decision_attribute_values.append(i + 1)
+        self.border_points_of_decision_attribute_values.append(len(dec_attr_list))
+
+        self.number_of_decision_attribute_values = len(set(dec_attr_list))
+        print("Kul ertekek: ", self.number_of_decision_attribute_values)
+        print("Hatarok: ", self.border_points_of_decision_attribute_values)
+
+        for i in range(0, len(df.values)):
+            r1 = random.randint(0, x + 1)
+            r2 = random.randint(0, y + 1)
+            entity = EntityPoint.EntityPoint(r1, r2, self.count, df.values[i])
+
+            # if  "nan" in df.values[i]:
+            #     entity.has_missing = True
+
+            entity.setPos(r1, r2)
+            self.count += 1
+            self.points_canvas.scene.addItem(entity)
+            text = QGraphicsTextItem(str(self.count - 1))
+            text.setPos(r1 + 2, r2 - 2)
+            self.points_canvas.scene.addItem(text)
+
+        self.fill_table(self.headers)
+
+        # self.find_thresholds(wine, 13, (data.manhattan, data.manhattan), 15, 16)
+
+    # -------------------------------------------------------------------------------------------------------------------
+    def fill_table(self, headers):
+        self.table.setColumnCount(len(headers))
+        self.table.setRowCount(self.count)
+
+        for i, e in enumerate(headers):
+            item = QtWidgets.QTableWidgetItem()
+            item.setText(e)
+            self.table.setHorizontalHeaderItem(i, item)
+
+        for i, e in enumerate(self.points_canvas.scene.getPointsList()):
+            for j in range(len(headers)):
+                item = QtWidgets.QTableWidgetItem()
+                item.setText(str(e.attributes[j]))
+                self.table.setItem(i, j, item)
+
+                # -------------------------------------------------------------------------------------------------------------------
     def getClusters(self):
         size = len(self.best[0])
         clusters = [ [] for _ in range(size)  ]
@@ -262,14 +376,26 @@ class MainMenu(QtWidgets.QMainWindow, main_window.Ui_MainWindow):
         print("--------------------------")
 
 
+    def define_simmilarity_dialog(self):
+        dialog = define_similarity.DefineSimilarity(self.headers)
+        if dialog.exec_() == QDialog.Accepted:
+            self.attribute_intervals = dialog.intervals
+            print("intervallumok: ",self.attribute_intervals)
+        else:
+            print('Cancelled')
+        dialog.deleteLater()
+
+
+    def too_high_difference(self,i,j):
+           if self.points_type == 1:
+               for k in range(1,len(self.attribute_intervals)):
+                   if abs(self.points_list[i].attributes[k]-self.points_list[j].attributes[k]) >= self.attribute_intervals[k]:
+                       return True
+           return False
 
     def define_simmilarity_rel(self):
-        simm = int(self.similarity_threshold.toPlainText())
-        diff = int(self.difference_threshold.toPlainText())
-
-        self.points_canvas.scene.setSimilarity_threshold(simm)
-        self.points_canvas.scene.setDifference_threshold(diff)
-
+        simm = float(self.similarity_threshold.toPlainText())
+        diff = float(self.difference_threshold.toPlainText())
         self.points_list = self.points_canvas.scene.getPointsList()
         num_of_points = len(self.points_list)
         relation = np.zeros((num_of_points,num_of_points))
@@ -277,24 +403,23 @@ class MainMenu(QtWidgets.QMainWindow, main_window.Ui_MainWindow):
         for i in range(num_of_points):
             for j in range(i+1,num_of_points):
                 d = self.points_list[i].distance(self.points_list[j],self.points_type)
-                if d <= simm:
-                    relation[i][j] = 1
-                    relation[j][i] = 1
-                elif d >= diff:
+                if d > diff or np.isnan(d) or self.too_high_difference(i, j):
                     relation[i][j] = -1
                     relation[j][i] = -1
+                elif d <= simm:
+                    relation[i][j] = 1
+                    relation[j][i] = 1
                 else:
                     relation[i][j] = 0
                     relation[j][i] = 0
 
-        np.savetxt('relation.txt', relation)
-        r = np.loadtxt('relation.txt')
-
+        print(relation)
         return relation
 
 
-    def run(self):
 
+    def run(self):
+        print("Points")
         print([str(e) for e in self.points_list])
         self.relation = self.define_simmilarity_rel()
         rows, columns = self.relation.shape

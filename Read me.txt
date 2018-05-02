@@ -13,12 +13,12 @@ There are 2 options for giving the input points:
 
 This option can be given in the main.py in line 39:
 self.points_type = 0 for random coordinate points
-self.points_type = 1 for random color points
+self.points_type = 1 for continous data
 
 The number of points can be given in the "Number of points" field. 
 Each point has a coordinate which is generated from the [X,Y] interval. 
 A point can be added to the list by selecting the "Generate" option and then clicking on the canvas.
-The similarity is based on the Euclidean distance of the objects or their RGB distance. The thresholds for the similarty and the difference can be given in the "Similarity" and "Difference" fields.
+The similarity is based on the Euclidean distance of the objects. The thresholds for the similarty and the difference can be given in the "Similarity" and "Difference" fields.
 
 Clicking on the "Run" button, the search algorithm is executed. Then some points can be selected for approximation by using the "Choose to be approximated" option and clicking on the selected point. 
 
